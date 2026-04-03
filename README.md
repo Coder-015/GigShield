@@ -1,50 +1,68 @@
-# Welcome to your Expo app 👋
+<div align="center">
+  <img src="./assets/images/icon.png" alt="GigShield Logo" width="120" height="120">
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+  # GigShield 🛡️
+  **The Parametric Insurance Engine for Gig Economy Workers.**
+  
+  [![Built with Expo](https://img.shields.io/badge/Built_with-Expo-000000?style=for-the-badge&logo=expo&logoColor=white)](https://expo.dev/)
+  [![Powered by React Native](https://img.shields.io/badge/Powered_by-React_Native-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://reactnative.dev/)
+  [![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
+</div>
 
-## Get started
+<br/>
 
-1. Install dependencies
+## ⛈️ The Problem
+Over 8 million gig-economy workers (delivery partners, ride-share drivers) in India lose their daily wages when extreme weather strikes. Traditional insurance is slow, requires tedious paperwork, and physically does not function for low-wage daily earners. 
 
+## 💡 The Solution
+**GigShield** is a zero-friction, algorithmic parametric insurance application explicitly designed to protect the wages of daily gig workers. 
+Using localized weather mapping and automated ledger contracts, GigShield completely automates the traditional insurance pipeline. 
+
+- ❌ No form submissions
+- ❌ No damage assessment waiting periods
+- ❌ No confusing premium clauses
+
+When heavy rain disrupts a specific micro-zone, the AI system **simulates the baseline disruption**, verifies the risk threshold, and autonomously processes a cash payout to the affected worker's UPI wallet *within minutes*.
+
+---
+
+## 🚀 Key Features
+
+* **Live Parametric Map Overlay:** Deep Vector graphics tracking real-time high-risk and safe zones mapping.
+* **Cinematic Event Handling:** App autonomously intercepts high-rainfall triggers and instantly spawns event modals displaying processing metadata.
+* **Algorithmic Claim Timelines:** Claim lifecycles are generated on the spot using mathematical disruption evaluations.
+* **Dark-Mode Native Framework:** Built on a deeply integrated, ultra-lightweight dark mode architecture protecting OLED screens and battery life for riders.
+* **Cross-Platform:** Transpiles physically to Android `.apk`, iOS apps, and a universal Web application via Expo.
+
+---
+
+## 🛠️ Technology Stack
+- **Frontend Core:** React Native, Typescript, Expo Router 
+- **Database & Auth:** Supabase (PostgreSQL), Zustand State Management
+- **UI Architecture:** Custom-built Zero-Dep Design System featuring Spring Physics & `react-native-svg`
+- **Deployments:** EAS Build Pipeline (Android), Netlify (Web)
+
+## 📱 Running the Project Locally
+
+We have natively optimized the client to run under Expo. 
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/your-username/GigShield.git
+   cd GigShield
+   ```
+2. **Install dependencies:**
    ```bash
    npm install
    ```
-
-2. Start the app
-
+3. **Start the Engine:**
    ```bash
    npx expo start
    ```
 
-In the output, you'll find options to open the app in a
+*To run physical APK simulations, use **EAS Build**.*
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+<div align="center">
+  <br/>
+  <b>Built for impact. Protected by code.</b>
+</div>
