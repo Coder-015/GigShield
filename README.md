@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./assets/images/icon.png" alt="GigShield Logo" width="120" height="120">
+  <img src="./assets/images/icon.png" alt="GigShield Logo" width="200" height="200">
 
   # GigShield 🛡️
   **The Parametric Insurance Engine for Gig Economy Workers.**
