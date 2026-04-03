@@ -61,6 +61,13 @@ We have natively optimized the client to run under Expo.
    ```
 
 *To run physical APK simulations, use **EAS Build**.*
+**Or easier way(RECOMMENDED)**
+follow this link
+ ```
+https://expo.dev/accounts/slayerexe/projects/GigShield/builds/bffdb02e-ed8f-4176-8456-7f2a73bf5eb9
+ ```
+and click install this will download the .apk and can be used like a real app.
+
 
 <div align="center">
   <br/>
