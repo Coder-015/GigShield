@@ -1,745 +1,390 @@
-import { Button, Card, Subtitle, Title, Value } from '@/components/DesignSystem';
-import useAppStore from '@/store/useAppStore';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Animated, Dimensions, ScrollView, StyleSheet,
+  Text, TouchableOpacity, View
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, {
+  Circle as SvgCircle, Defs, G, Line, RadialGradient,
+  Rect, Stop, Text as SvgText, Polygon
+} from 'react-native-svg';
 import { router } from 'expo-router';
 import { useUserStore } from '@/store/userStore';
-import { AlertTriangle, Shield, TrendingUp, X } from 'lucide-react-native';
-import React, { useEffect, useState, useRef } from 'react';
-import { Animated, Dimensions, StyleSheet, Text, TouchableOpacity, View, Alert, ActivityIndicator, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Circle, Defs, RadialGradient, Rect, Stop, Text as SvgText, G } from 'react-native-svg';
+import { CloudRain, Shield, AlertTriangle } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const { width: SW, height: SH } = Dimensions.get('window');
+const MAP_W = SW * 1.2;
+const MAP_H = SH * 0.62;
 
-interface ZoneDetails {
-  id: string;
-  name: string;
+// ─── Zone data per city with proper relative positions ─────────────────────
+interface Zone {
+  id: string; name: string;
+  x: number; y: number; r: number;
   risk: 'high' | 'medium' | 'safe';
-  workers: number;
-  x: number;
-  y: number;
-  radius: number;
+  workers: number; rainfall: number; payout: number;
 }
 
-const CITY_ZONES: Record<string, ZoneDetails[]> = {
+const ZONES: Record<string, Zone[]> = {
   Mumbai: [
-    { id: 'dharavi', name: 'Dharavi', x: 200, y: 300, radius: 60, risk: 'high', workers: 234 },
-    { id: 'kurla', name: 'Kurla', x: 340, y: 280, radius: 70, risk: 'medium', workers: 189 },
-    { id: 'andheri', name: 'Andheri', x: 150, y: 150, radius: 90, risk: 'medium', workers: 312 },
-    { id: 'bandra', name: 'Bandra', x: 120, y: 240, radius: 50, risk: 'safe', workers: 156 },
-    { id: 'worli', name: 'Worli', x: 120, y: 400, radius: 55, risk: 'safe', workers: 98 },
-    { id: 'colaba', name: 'Colaba', x: 150, y: 550, radius: 45, risk: 'safe', workers: 67 },
-    { id: 'powai', name: 'Powai', x: 420, y: 160, radius: 65, risk: 'high', workers: 145 },
-    { id: 'thane', name: 'Thane', x: 500, y: 80, radius: 100, risk: 'medium', workers: 203 },
+    { id: 'dharavi',  name: 'Dharavi',  x: 230, y: 360, r: 70, risk: 'high',   workers: 234, rainfall: 120, payout: 450 },
+    { id: 'kurla',    name: 'Kurla',    x: 380, y: 310, r: 60, risk: 'medium', workers: 189, rainfall: 65,  payout: 280 },
+    { id: 'andheri',  name: 'Andheri',  x: 180, y: 185, r: 80, risk: 'medium', workers: 312, rainfall: 55,  payout: 250 },
+    { id: 'bandra',   name: 'Bandra',   x: 160, y: 295, r: 52, risk: 'safe',   workers: 156, rainfall: 20,  payout: 100 },
+    { id: 'worli',    name: 'Worli',    x: 155, y: 430, r: 48, risk: 'safe',   workers: 98,  rainfall: 15,  payout: 80  },
+    { id: 'powai',    name: 'Powai',    x: 460, y: 195, r: 65, risk: 'high',   workers: 145, rainfall: 110, payout: 420 },
+    { id: 'thane',    name: 'Thane',    x: 520, y: 115, r: 75, risk: 'medium', workers: 203, rainfall: 50,  payout: 230 },
   ],
   Bengaluru: [
-    { id: 'koramangala', name: 'Koramang.', x: 250, y: 300, radius: 70, risk: 'safe', workers: 412 },
-    { id: 'indiranagar', name: 'Indiranagar', x: 350, y: 200, radius: 60, risk: 'medium', workers: 320 },
-    { id: 'hsr', name: 'HSR Layout', x: 270, y: 450, radius: 80, risk: 'high', workers: 512 },
-    { id: 'whitefield', name: 'Whitefield', x: 500, y: 150, radius: 110, risk: 'medium', workers: 450 },
-    { id: 'electronic_city', name: 'E-City', x: 320, y: 600, radius: 85, risk: 'safe', workers: 388 },
+    { id: 'koramangala', name: 'Koramangala', x: 280, y: 330, r: 70, risk: 'safe',   workers: 412, rainfall: 18, payout: 85  },
+    { id: 'indiranagar', name: 'Indiranagar', x: 390, y: 220, r: 60, risk: 'medium', workers: 320, rainfall: 50, payout: 230 },
+    { id: 'hsr',         name: 'HSR Layout',  x: 290, y: 460, r: 80, risk: 'high',   workers: 512, rainfall: 95, payout: 380 },
+    { id: 'ecity',       name: 'E-City',      x: 340, y: 580, r: 70, risk: 'medium', workers: 388, rainfall: 45, payout: 200 },
+    { id: 'whitefield',  name: 'Whitefield',  x: 510, y: 180, r: 90, risk: 'medium', workers: 450, rainfall: 40, payout: 190 },
   ],
   Delhi: [
-    { id: 'cp', name: 'Connaught P', x: 300, y: 250, radius: 50, risk: 'safe', workers: 150 },
-    { id: 'dwarka', name: 'Dwarka', x: 120, y: 350, radius: 95, risk: 'medium', workers: 280 },
-    { id: 'lajpat', name: 'Lajpat Nagar', x: 380, y: 400, radius: 60, risk: 'high', workers: 341 },
-    { id: 'rohini', name: 'Rohini', x: 200, y: 100, radius: 85, risk: 'safe', workers: 210 },
-  ]
+    { id: 'lajpat', name: 'Lajpat Nagar',   x: 390, y: 390, r: 65, risk: 'high',   workers: 341, rainfall: 88, payout: 360 },
+    { id: 'dwarka', name: 'Dwarka',          x: 175, y: 360, r: 80, risk: 'medium', workers: 280, rainfall: 52, payout: 240 },
+    { id: 'rohini', name: 'Rohini',          x: 230, y: 140, r: 78, risk: 'safe',   workers: 210, rainfall: 12, payout: 75  },
+    { id: 'cp',     name: 'Connaught Pl.',  x: 310, y: 270, r: 52, risk: 'safe',   workers: 150, rainfall: 10, payout: 60  },
+  ],
+  Chennai: [
+    { id: 'anna',   name: 'Anna Nagar', x: 230, y: 230, r: 72, risk: 'medium', workers: 290, rainfall: 60,  payout: 260 },
+    { id: 'adyar',  name: 'Adyar',      x: 330, y: 420, r: 75, risk: 'high',   workers: 310, rainfall: 100, payout: 400 },
+    { id: 'tnagar', name: 'T. Nagar',   x: 270, y: 330, r: 60, risk: 'medium', workers: 240, rainfall: 45,  payout: 210 },
+  ],
+  Hyderabad: [
+    { id: 'hitech',   name: 'Hitech City',   x: 220, y: 250, r: 80, risk: 'medium', workers: 445, rainfall: 48, payout: 210 },
+    { id: 'banjara',  name: 'Banjara Hills', x: 340, y: 380, r: 65, risk: 'safe',   workers: 230, rainfall: 14, payout: 70  },
+    { id: 'secunder', name: 'Secunderabad',  x: 400, y: 185, r: 70, risk: 'medium', workers: 312, rainfall: 42, payout: 190 },
+  ],
 };
 
-const RISK_COLORS = {
-  high: { core: '#EF4444', outer: 'rgba(239, 68, 68, 0.4)' },
-  medium: { core: '#F59E0B', outer: 'rgba(245, 158, 11, 0.4)' },
-  safe: { core: '#10B981', outer: 'rgba(16, 185, 129, 0.4)' },
+const RISK = {
+  high:   { color: '#EF4444', glow: 'rgba(239,68,68,0.35)',   ring: 'rgba(239,68,68,0.12)',  label: 'HIGH' },
+  medium: { color: '#F59E0B', glow: 'rgba(245,158,11,0.30)',  ring: 'rgba(245,158,11,0.10)', label: 'MED'  },
+  safe:   { color: '#10B981', glow: 'rgba(16,185,129,0.25)',  ring: 'rgba(16,185,129,0.08)', label: 'SAFE' },
 };
 
-
-
-export default function MapScreen() {
-  const { stats, createClaim, isClaimProcessing, loadUserClaims } = useAppStore();
-  const { user, isAuthenticated, isDemoMode } = useUserStore();
-  const [selectedZone, setSelectedZone] = useState<any | null>(null);
-  const [showBottomSheet, setShowBottomSheet] = useState(false);
-
-  useEffect(() => {
-    console.log('[DEBUG] Map Screen Auth:', { isAuthenticated, userId: user?.id });
-  }, [isAuthenticated, user]);
-  const [bottomSheetAnim] = useState(new Animated.Value(screenHeight));
-  const [pulsingZones, setPulsingZones] = useState<Set<string>>(new Set());
-
-  const currentCityZones = CITY_ZONES[user?.city || 'Mumbai'] || CITY_ZONES['Mumbai'];
-  const scrollViewRef = useRef<ScrollView>(null);
-
-  // Center map on startup
-  useEffect(() => {
-    if (scrollViewRef.current) {
-      setTimeout(() => {
-        scrollViewRef.current?.scrollTo({ x: 0, y: 60, animated: true });
-      }, 500);
-    }
-  }, [user?.city]);
-
-  // Create pulse animation driver
-  const [pulseScale] = useState(new Animated.Value(1));
-  const [pulseOpac] = useState(new Animated.Value(0.4));
+// ─── Animated pulsing ring ───────────────────────────────────────────────────
+function PulseRing({ x, y, r, color }: { x: number; y: number; r: number; color: string }) {
+  const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.loop(
-      Animated.parallel([
-        Animated.sequence([
-          Animated.timing(pulseScale, { toValue: 1.15, duration: 1500, useNativeDriver: true }),
-          Animated.timing(pulseScale, { toValue: 1, duration: 1500, useNativeDriver: true }),
-        ]),
-        Animated.sequence([
-          Animated.timing(pulseOpac, { toValue: 0.1, duration: 1500, useNativeDriver: true }),
-          Animated.timing(pulseOpac, { toValue: 0.4, duration: 1500, useNativeDriver: true }),
-        ])
+      Animated.sequence([
+        Animated.timing(anim, { toValue: 1, duration: 1800, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 0, duration: 0, useNativeDriver: true }),
       ])
     ).start();
   }, []);
-
-  // Check if user's zone is high risk
-  const userZone = currentCityZones.find(zone => zone.id === user?.zone || zone.name === user?.zone);
-  const isUserZoneHighRisk = userZone?.risk === 'high';
-
-  const handleZonePress = (zone: any) => {
-    setSelectedZone(zone);
-    Haptics.selectionAsync();
-    setShowBottomSheet(true);
-    requestAnimationFrame(() => {
-      Animated.timing(bottomSheetAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: false, // Must be false for translateY on some android builds
-      }).start();
-    });
-  };
-
-  const closeBottomSheet = () => {
-    Animated.timing(bottomSheetAnim, {
-      toValue: screenHeight,
-      duration: 300,
-      useNativeDriver: false,
-    }).start(() => setShowBottomSheet(false));
-  };
-
-  const handleSimulateRain = async (zoneOverride?: any) => {
-    const targetZone = zoneOverride || selectedZone;
-    if (!targetZone) return;
-
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    
-    const amount = targetZone.risk === 'high' ? 450 : targetZone.risk === 'medium' ? 250 : 100;
-    const rainfall = targetZone.risk === 'high' ? 120 : targetZone.risk === 'medium' ? 65 : 15;
-
-    closeBottomSheet();
-    setTimeout(() => {
-      router.push(`/alert?zone=${targetZone.name}&amount=${amount}&rainfall=${rainfall}` as any);
-    }, 350); // let bottom sheet close smoothly before navigation
-  };
-
-  const handleZoneHistory = () => {
-    if (selectedZone) {
-      console.log('Navigate to zone details for', selectedZone.name);
-    }
-  };
-
-  const handleWeatherReport = () => {
-    console.log('Navigate to weather report');
-  };
-
-  if (!user || !isAuthenticated) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.centerContainer}>
-          <Subtitle>Please sign in to view the map</Subtitle>
-          <Button
-            onPress={() => router.replace('/login' as any)}
-            variant="primary"
-          >
-            Go to Login
-          </Button>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
+  const scale = anim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.6] });
+  const opacity = anim.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0.6, 0.2, 0] });
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Warning banner for user's zone if high risk */}
-      {isUserZoneHighRisk && (
-        <View style={styles.warningBanner}>
-          <AlertTriangle size={16} color="#F59E0B" />
-          <Text style={styles.warningText}>
-            Heavy rain predicted in {userZone?.name} at 2pm — You are covered
-          </Text>
-        </View>
-      )}
-
-      {/* Map Interactive Canvas */}
-      <View style={styles.mapWrapFixed}>
-        <ScrollView 
-          ref={scrollViewRef}
-          horizontal 
-          bounces={false} 
-          showsHorizontalScrollIndicator={false}
-          showsVerticalScrollIndicator={false}
-          style={styles.realMap}
-        >
-          <ScrollView bounces={false}>
-            {/* Massive Dark Map Base Layer - Procedural Abstract Map */}
-            <View style={{ width: 800, height: 800, backgroundColor: '#09090B', position: 'relative' }}>
-              <Svg width="800" height="800" style={StyleSheet.absoluteFill}>
-                <Defs>
-                  <RadialGradient id="highRisk" cx="50%" cy="50%" rx="50%" ry="50%" fx="50%" fy="50%">
-                    <Stop offset="0%" stopColor="#EF4444" stopOpacity="0.4" />
-                    <Stop offset="70%" stopColor="#EF4444" stopOpacity="0.1" />
-                    <Stop offset="100%" stopColor="#EF4444" stopOpacity="0" />
-                  </RadialGradient>
-                  <RadialGradient id="mediumRisk" cx="50%" cy="50%" rx="50%" ry="50%" fx="50%" fy="50%">
-                    <Stop offset="0%" stopColor="#F59E0B" stopOpacity="0.4" />
-                    <Stop offset="70%" stopColor="#F59E0B" stopOpacity="0.1" />
-                    <Stop offset="100%" stopColor="#F59E0B" stopOpacity="0" />
-                  </RadialGradient>
-                  <RadialGradient id="safeRisk" cx="50%" cy="50%" rx="50%" ry="50%" fx="50%" fy="50%">
-                    <Stop offset="0%" stopColor="#10B981" stopOpacity="0.4" />
-                    <Stop offset="70%" stopColor="#10B981" stopOpacity="0.1" />
-                    <Stop offset="100%" stopColor="#10B981" stopOpacity="0" />
-                  </RadialGradient>
-                </Defs>
-
-                {/* Abstract road lines to simulate map feel */}
-                <Rect x="0" y="0" width="800" height="800" fill="#1C1C1E" />
-                {[...Array(20)].map((_, i) => (
-                  <Rect key={`h${i}`} x="0" y={i * 60} width="800" height="1" fill="#2A2A2D" />
-                ))}
-                {[...Array(20)].map((_, i) => (
-                  <Rect key={`v${i}`} x={i * 60} y="0" width="1" height="800" fill="#2A2A2D" />
-                ))}
-
-                {currentCityZones.map((zone) => {
-                  const gradientId = zone.risk === 'high' ? 'url(#highRisk)' : zone.risk === 'medium' ? 'url(#mediumRisk)' : 'url(#safeRisk)';
-                  const colors = RISK_COLORS[zone.risk];
-                  const isUserLocation = zone.id === user?.zone;
-
-                  return (
-                    <G key={`svg-${zone.id}`}>
-                      {/* Gradient Ambient Glow Base */}
-                      <Circle cx={zone.x} cy={zone.y} r={zone.radius * 1.5} fill={gradientId} />
-                      
-                      {/* Interactive Solid Core Ring */}
-                      <Circle 
-                        cx={zone.x} cy={zone.y} 
-                        r={zone.radius * 0.4} 
-                        fill={colors.outer}
-                        stroke={colors.core}
-                        strokeWidth={2}
-                      />
-                      
-                      {/* Zone Label Text inside Circle */}
-                      <SvgText
-                        x={zone.x}
-                        y={zone.y + 5}
-                        fill="#FFFFFF"
-                        fontSize="14"
-                        fontWeight="bold"
-                        textAnchor="middle"
-                      >
-                        {zone.name}
-                      </SvgText>
-
-                      {isUserLocation && (
-                        <Circle
-                          cx={zone.x + zone.radius * 0.3}
-                          cy={zone.y - zone.radius * 0.3}
-                          r={6}
-                          fill="#F97316"
-                          stroke="#FFFFFF"
-                          strokeWidth={2}
-                        />
-                      )}
-                    </G>
-                  );
-                })}
-              </Svg>
-
-              {/* RN Animated Overlay for exactly pulsing high risk zones */}
-              {currentCityZones.map((zone) => {
-                const isHighRisk = zone.risk === 'high';
-                if (!isHighRisk) return null;
-                return (
-                  <Animated.View 
-                    key={`pulse-${zone.id}`}
-                    pointerEvents="none"
-                    style={{
-                      position: 'absolute',
-                      left: zone.x - zone.radius * 0.4,
-                      top: zone.y - zone.radius * 0.4,
-                      width: zone.radius * 0.8,
-                      height: zone.radius * 0.8,
-                      borderRadius: zone.radius * 0.4,
-                      backgroundColor: 'rgba(239, 68, 68, 0.4)',
-                      opacity: pulseOpac,
-                      transform: [{ scale: pulseScale }]
-                    }} 
-                  />
-                )
-              })}
-
-              {/* Native Absolute Tap Targets to prevent SVG thread lock */}
-              {currentCityZones.map((zone) => (
-                <TouchableOpacity
-                  key={`tap-${zone.id}`}
-                  style={{
-                    position: 'absolute',
-                    left: zone.x - zone.radius * 0.8,
-                    top: zone.y - zone.radius * 0.8,
-                    width: zone.radius * 1.6,
-                    height: zone.radius * 1.6,
-                    borderRadius: zone.radius * 0.8,
-                    zIndex: 10, // Must be above everything
-                  }}
-                  onPress={() => handleZonePress(zone)}
-                  activeOpacity={0.5}
-                />
-              ))}
-            </View>
-          </ScrollView>
-        </ScrollView>
-        <View style={styles.mapGradientBottom} />
-      </View>
-
-      {/* Stats Overlay */}
-      <View style={styles.statsOverlay}>
-        <Card style={styles.statsCard}>
-          <View style={styles.statsHeader}>
-            <Shield size={20} color="#F97316" />
-            <Title size="small">Your Protection</Title>
-          </View>
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#FFFFFF' }}>{stats?.totalProtected || 0}</Text>
-              <Text style={{ fontSize: 14, color: '#A1A1AA' }}>Total Protected</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#FFFFFF' }}>{stats?.weeklyPremium || 0}</Text>
-              <Text style={{ fontSize: 14, color: '#A1A1AA' }}>Weekly Premium</Text>
-            </View>
-          </View>
-        </Card>
-      </View>
-
-      {/* Legend Map Bottom Floating */}
-      <View style={styles.legend}>
-        <View style={styles.legendWrapper}>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#EF4444' }]} />
-            <Text style={styles.legendText}>High</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#F59E0B' }]} />
-            <Text style={styles.legendText}>Medium</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#10B981' }]} />
-            <Text style={styles.legendText}>Safe</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Action Buttons */}
-      <View style={styles.actionButtons}>
-        <Card style={styles.actionCard}>
-          <View style={styles.buttonsRow}>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.simulateButton, (!selectedZone || isClaimProcessing) && { opacity: 0.5 }]}
-              onPress={() => handleSimulateRain()}
-              disabled={!selectedZone || isClaimProcessing}
-            >
-              {isClaimProcessing ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <>
-                  <AlertTriangle size={16} color="#FFFFFF" />
-                  <Text style={styles.actionButtonText}>Simulate Rain</Text>
-                </>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.historyButton]}
-              onPress={handleZoneHistory}
-              disabled={!selectedZone}
-            >
-              <TrendingUp size={16} color="#FFFFFF" />
-              <Text style={styles.actionButtonText}>Zone History</Text>
-            </TouchableOpacity>
-          </View>
-        </Card>
-      </View>
-
-      {/* Bottom Sheet */}
-      {showBottomSheet && selectedZone && (
-        <View style={styles.bottomSheetOverlay}>
-          <Animated.View 
-            style={[
-              styles.bottomSheet,
-              {
-                transform: [{ translateY: bottomSheetAnim }]
-              }
-            ]}
-          >
-            <View style={styles.bottomSheetHeader}>
-              <View style={styles.bottomSheetHandle} />
-              <TouchableOpacity onPress={closeBottomSheet} style={styles.closeButton}>
-                <X size={20} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.bottomSheetContent}>
-              <View style={styles.zoneHeader}>
-                <Title size="medium">{selectedZone.name}</Title>
-                <View style={[
-                  styles.riskBadge,
-                  selectedZone.risk === 'high' && styles.highRiskBadge,
-                  selectedZone.risk === 'medium' && styles.mediumRiskBadge,
-                  selectedZone.risk === 'safe' && styles.lowRiskBadge,
-                ]}>
-                  <Text style={[
-                    styles.riskText,
-                    selectedZone.risk === 'high' && styles.highRiskText,
-                    selectedZone.risk === 'medium' && styles.mediumRiskText,
-                    selectedZone.risk === 'safe' && styles.lowRiskText,
-                  ]}>{selectedZone.risk.toUpperCase()}</Text>
-                </View>
-              </View>
-              
-              <Text style={styles.workersText}>
-                {selectedZone.workers} workers covered in this zone
-              </Text>
-              
-              <Text style={styles.conditionsText}>
-                Current conditions: {selectedZone.risk === 'high' ? 'Heavy rain expected' : 
-                                  selectedZone.risk === 'medium' ? 'Moderate rain possible' : 
-                                  'Clear weather expected'}
-              </Text>
-              
-              {selectedZone.id === user?.zone && (
-                <View style={styles.yourZoneBadge}>
-                  <Text style={styles.yourZoneText}>Your zone</Text>
-                </View>
-              )}
-              
-              <Button
-                onPress={handleSimulateRain}
-                size="large"
-                style={styles.simulateRainButton}
-              >
-                Simulate Rain in {selectedZone.name}
-              </Button>
-            </View>
-          </Animated.View>
-        </View>
-      )}
-    </SafeAreaView>
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        left: x - r,
+        top: y - r,
+        width: r * 2,
+        height: r * 2,
+        borderRadius: r,
+        borderWidth: 2,
+        borderColor: color,
+        opacity,
+        transform: [{ scale }],
+      }}
+    />
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0F0F13', // Enforce dark
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    backgroundColor: '#0F0F13',
-  },
-  warningBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(245, 158, 11, 0.2)',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(245, 158, 11, 0.3)',
-  },
-  checkmarkContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F59E0B',
-  },
-  warningText: {
-    fontSize: 14,
-    color: '#FCD34D',
-    fontWeight: '600',
-  },
-  mapWrapFixed: {
-    flex: 1,
-    width: screenWidth,
-    height: screenHeight,
-    position: 'absolute',
-    top: 0,
-    left: 0,
-  },
-  realMap: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  heatBadge: {
-    backgroundColor: 'rgba(28,28,30,0.85)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  heatText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  userDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#F97316',
-    borderWidth: 2,
-    borderColor: '#FFF',
-  },
-  mapGradientBottom: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 150,
-    backgroundColor: 'rgba(15, 15, 19, 0.4)',
-  },
-  statsOverlay: {
-    position: 'absolute',
-    top: 60,
-    left: 20,
-    right: 20,
-    zIndex: 1,
-  },
-  statsCard: {
-    padding: 16,
-    backgroundColor: 'rgba(28, 28, 30, 0.85)',
-    borderWidth: 1,
-    borderColor: '#333336',
-    borderRadius: 16,
-  },
-  statsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    gap: 8,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  statItem: {
-    alignItems: 'center',
-  },
+export default function MapScreen() {
+  const { user, isAuthenticated } = useUserStore();
+  const [selected, setSelected] = useState<Zone | null>(null);
+  const sheetAnim = useRef(new Animated.Value(300)).current;
+  const radarAnim = useRef(new Animated.Value(0)).current;
+
+  const city = user?.city || 'Mumbai';
+  const zones = ZONES[city] || ZONES.Mumbai;
+
+  // Radar sweep animation
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(radarAnim, { toValue: 1, duration: 4000, useNativeDriver: true })
+    ).start();
+  }, []);
+
+  const openSheet = (zone: Zone) => {
+    Haptics.selectionAsync();
+    setSelected(zone);
+    Animated.spring(sheetAnim, { toValue: 0, useNativeDriver: true, tension: 80, friction: 12 }).start();
+  };
+
+  const closeSheet = () => {
+    Animated.timing(sheetAnim, { toValue: 300, duration: 250, useNativeDriver: true }).start(() => setSelected(null));
+  };
+
+  const handleSimulate = () => {
+    if (!selected) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    closeSheet();
+    setTimeout(() => {
+      router.push(`/alert?zone=${selected.name}&amount=${selected.payout}&rainfall=${selected.rainfall}` as any);
+    }, 300);
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <View style={s.container}>
+        <SafeAreaView style={s.authCenter}>
+          <Shield size={60} color="#F97316" />
+          <Text style={s.authTitle}>Sign in to view your risk map</Text>
+          <TouchableOpacity style={s.authBtn} onPress={() => router.replace('/login' as any)}>
+            <Text style={s.authBtnTxt}>Go to Login</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  const totalWorkers = zones.reduce((n, z) => n + z.workers, 0);
+  const highRiskZones = zones.filter(z => z.risk === 'high').length;
+
+  return (
+    <View style={s.container}>
+      {/* ── HUD Header ── */}
+      <SafeAreaView style={s.header}>
+        <View style={s.headerRow}>
+          <View>
+            <Text style={s.headerCity}>📍{city} Risk Radar</Text>
+            <Text style={s.headerSub}>{totalWorkers.toLocaleString()} workers • {highRiskZones} high-risk zones</Text>
+          </View>
+          <View style={s.liveChip}>
+            <View style={s.liveDot} />
+            <Text style={s.liveTxt}>LIVE</Text>
+          </View>
+        </View>
+      </SafeAreaView>
+
+      {/* ── Map Canvas ── */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ width: MAP_W }}
+      >
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ height: MAP_H }}>
+          {/* SVG base: grid + zones */}
+          <View style={{ width: MAP_W, height: MAP_H }}>
+            <Svg width={MAP_W} height={MAP_H}>
+              <Defs>
+                {/* Gradient definitions for each risk type */}
+                {(['high', 'medium', 'safe'] as const).map(r => (
+                  <RadialGradient key={r} id={`grad_${r}`} cx="50%" cy="50%" r="50%">
+                    <Stop offset="0%" stopColor={RISK[r].color} stopOpacity="0.35" />
+                    <Stop offset="60%" stopColor={RISK[r].color} stopOpacity="0.12" />
+                    <Stop offset="100%" stopColor={RISK[r].color} stopOpacity="0" />
+                  </RadialGradient>
+                ))}
+              </Defs>
+
+              {/* Dark grid background */}
+              <Rect width={MAP_W} height={MAP_H} fill="#0A0A0F" />
+
+              {/* Grid lines */}
+              {Array.from({ length: 22 }, (_, i) => (
+                <Line key={`h${i}`} x1={0} y1={i * 40} x2={MAP_W} y2={i * 40}
+                  stroke="#1A1A2E" strokeWidth="1" />
+              ))}
+              {Array.from({ length: 22 }, (_, i) => (
+                <Line key={`v${i}`} x1={i * 40} y1={0} x2={i * 40} y2={MAP_H}
+                  stroke="#1A1A2E" strokeWidth="1" />
+              ))}
+
+              {/* Diagonal accent lines (city road feel) */}
+              {[100, 250, 400].map(x => (
+                <Line key={`d${x}`} x1={x} y1={0} x2={x + 150} y2={MAP_H}
+                  stroke="#1E1E3A" strokeWidth="0.8" strokeDasharray="6,10" />
+              ))}
+
+              {/* Zones */}
+              {zones.map(zone => {
+                const isSelected = selected?.id === zone.id;
+                const cfg = RISK[zone.risk];
+                return (
+                  <G key={zone.id}>
+                    {/* Outer ambient glow */}
+                    <SvgCircle cx={zone.x} cy={zone.y} r={zone.r * 1.7}
+                      fill={`url(#grad_${zone.risk})`} />
+                    {/* Zone ring */}
+                    <SvgCircle cx={zone.x} cy={zone.y} r={zone.r}
+                      fill={cfg.glow}
+                      stroke={cfg.color}
+                      strokeWidth={isSelected ? 3 : 1.5}
+                      strokeDasharray={isSelected ? undefined : '8,5'}
+                    />
+                    {/* Center dot */}
+                    <SvgCircle cx={zone.x} cy={zone.y} r={5}
+                      fill={cfg.color} />
+                    {/* Zone name */}
+                    <SvgText x={zone.x} y={zone.y - zone.r - 8}
+                      fill={isSelected ? '#FFFFFF' : '#D4D4D8'}
+                      fontSize={isSelected ? 14 : 12}
+                      fontWeight={isSelected ? 'bold' : 'normal'}
+                      textAnchor="middle">
+                      {zone.name}
+                    </SvgText>
+                    {/* Risk badge */}
+                    <SvgText x={zone.x} y={zone.y + 4}
+                      fill={cfg.color}
+                      fontSize={10}
+                      fontWeight="bold"
+                      textAnchor="middle">
+                      {cfg.label}
+                    </SvgText>
+                    {/* Worker count */}
+                    <SvgText x={zone.x} y={zone.y + 18}
+                      fill="#888"
+                      fontSize={10}
+                      textAnchor="middle">
+                      {zone.workers} workers
+                    </SvgText>
+                  </G>
+                );
+              })}
+            </Svg>
+
+            {/* Native touch targets over SVG zones */}
+            {zones.map(zone => (
+              <TouchableOpacity
+                key={`tap_${zone.id}`}
+                onPress={() => openSheet(zone)}
+                activeOpacity={0.6}
+                style={{
+                  position: 'absolute',
+                  left: zone.x - zone.r,
+                  top: zone.y - zone.r,
+                  width: zone.r * 2,
+                  height: zone.r * 2,
+                  borderRadius: zone.r,
+                }}
+              />
+            ))}
+
+            {/* Pulse rings for high-risk zones */}
+            {zones
+              .filter(z => z.risk === 'high')
+              .map(zone => (
+                <PulseRing key={`pulse_${zone.id}`}
+                  x={zone.x} y={zone.y} r={zone.r}
+                  color={RISK.high.color} />
+              ))}
+          </View>
+        </ScrollView>
+      </ScrollView>
+
+      {/* ── Legend ── */}
+      <View style={s.legend}>
+        {(['high', 'medium', 'safe'] as const).map(r => (
+          <View key={r} style={s.legendRow}>
+            <View style={[s.legendDot, { backgroundColor: RISK[r].color }]} />
+            <Text style={s.legendTxt}>{r.charAt(0).toUpperCase() + r.slice(1)}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* ── Zone Detail Sheet ── */}
+      {selected && (
+        <Animated.View style={[s.sheet, { transform: [{ translateY: sheetAnim }] }]}>
+          <View style={s.sheetHandle} />
+          {/* Header */}
+          <View style={s.sheetRow}>
+            <View style={[s.riskChip, { backgroundColor: RISK[selected.risk].color + '25', borderColor: RISK[selected.risk].color }]}>
+              <Text style={[s.riskChipTxt, { color: RISK[selected.risk].color }]}>
+                {RISK[selected.risk].label} RISK
+              </Text>
+            </View>
+            <Text style={s.sheetTitle}>{selected.name}</Text>
+            <TouchableOpacity onPress={closeSheet} style={s.closeBtn}>
+              <Text style={s.closeTxt}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Stats row */}
+          <View style={s.statsRow}>
+            <View style={s.statBox}>
+              <Text style={s.statVal}>🌧️ {selected.rainfall}mm</Text>
+              <Text style={s.statLabel}>Expected Rain</Text>
+            </View>
+            <View style={s.statBox}>
+              <Text style={s.statVal}>👥 {selected.workers}</Text>
+              <Text style={s.statLabel}>Workers Active</Text>
+            </View>
+            <View style={s.statBox}>
+              <Text style={s.statVal}>₹{selected.payout}</Text>
+              <Text style={s.statLabel}>Claim Payout</Text>
+            </View>
+          </View>
+
+          {/* Simulate button */}
+          <TouchableOpacity
+            style={[s.simBtn, { backgroundColor: RISK[selected.risk].color }]}
+            onPress={handleSimulate}
+          >
+            <CloudRain size={18} color="#FFF" />
+            <Text style={s.simBtnTxt}>Simulate Rain in {selected.name}</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      )}
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0A0A0F' },
+  authCenter: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  authTitle: { color: '#FFF', fontSize: 20, fontWeight: '700', marginTop: 20, marginBottom: 24, textAlign: 'center' },
+  authBtn: { backgroundColor: '#F97316', borderRadius: 14, paddingHorizontal: 32, paddingVertical: 14 },
+  authBtnTxt: { color: '#FFF', fontWeight: '700', fontSize: 16 },
+
+  header: { backgroundColor: '#0F0F13', borderBottomWidth: 1, borderBottomColor: '#1A1A2E' },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14 },
+  headerCity: { color: '#FFF', fontSize: 20, fontWeight: '800' },
+  headerSub: { color: '#666', fontSize: 12, marginTop: 2 },
+  liveChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0F2910', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, gap: 6, borderWidth: 1, borderColor: '#10B981' },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#10B981' },
+  liveTxt: { color: '#10B981', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+
   legend: {
-    position: 'absolute',
-    bottom: 120, // Above floating tabbar
-    alignSelf: 'center',
-    zIndex: 2,
+    position: 'absolute', bottom: 110, right: 16,
+    backgroundColor: 'rgba(10,10,15,0.92)', borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: '#1A1A2E', gap: 8,
   },
-  legendWrapper: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(28, 28, 30, 0.85)',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 30,
-    borderWidth: 1,
-    borderColor: '#333336',
-    gap: 20,
+  legendRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  legendDot: { width: 10, height: 10, borderRadius: 5 },
+  legendTxt: { color: '#D4D4D8', fontSize: 12, fontWeight: '600' },
+
+  sheet: {
+    position: 'absolute', bottom: 90, left: 12, right: 12,
+    backgroundColor: '#141418', borderRadius: 20, padding: 20,
+    borderWidth: 1, borderColor: '#2A2A3A',
+    shadowColor: '#000', shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 12,
   },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+  sheetHandle: { width: 40, height: 4, backgroundColor: '#333', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  sheetRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 10 },
+  sheetTitle: { color: '#FFF', fontSize: 20, fontWeight: '800', flex: 1 },
+  riskChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
+  riskChipTxt: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+  closeBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#2A2A3A', justifyContent: 'center', alignItems: 'center' },
+  closeTxt: { color: '#888', fontSize: 14, fontWeight: '700' },
+
+  statsRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  statBox: { flex: 1, backgroundColor: '#1C1C24', borderRadius: 12, padding: 12, alignItems: 'center' },
+  statVal: { color: '#FFF', fontSize: 15, fontWeight: '700', marginBottom: 4 },
+  statLabel: { color: '#666', fontSize: 11, textAlign: 'center' },
+
+  simBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 10, borderRadius: 14, paddingVertical: 15,
   },
-  legendColor: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  legendText: {
-    fontSize: 12,
-    color: '#D1D5DB',
-    fontWeight: '600',
-  },
-  actionButtons: {
-    position: 'absolute',
-    bottom: 20,
-    left: 20,
-    right: 20,
-    zIndex: 1,
-  },
-  actionCard: {
-    padding: 16,
-    backgroundColor: 'rgba(28, 28, 30, 0.95)',
-    borderWidth: 1,
-    borderColor: '#333336',
-    borderRadius: 16,
-  },
-  buttonsRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 6,
-  },
-  simulateButton: {
-    backgroundColor: '#F97316',
-  },
-  historyButton: {
-    backgroundColor: '#3B82F6',
-  },
-  weatherButton: {
-    backgroundColor: '#10B981',
-  },
-  actionButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    fontFamily: 'System',
-  },
-  bottomSheetOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    zIndex: 1000,
-  },
-  bottomSheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#1C1C1E',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 24,
-    paddingTop: 32,
-    paddingBottom: 110, // Raised extremely high so CTAs are fully clear of the tab-bar constraint
-    borderTopWidth: 1,
-    borderColor: '#333336',
-  },
-  bottomSheetHeader: {
-    alignItems: 'center',
-    paddingVertical: 16,
-    position: 'relative',
-  },
-  bottomSheetHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 2,
-    marginBottom: 8,
-  },
-  closeButton: {
-    position: 'absolute',
-    right: 20,
-    top: 16,
-  },
-  bottomSheetContent: {
-    paddingHorizontal: 24,
-  },
-  zoneHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  riskBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  highRiskBadge: {
-    backgroundColor: '#FEE2E2',
-  },
-  mediumRiskBadge: {
-    backgroundColor: '#FEF3C7',
-  },
-  lowRiskBadge: {
-    backgroundColor: '#D1FAE5',
-  },
-  riskText: {
-    fontSize: 10,
-    fontWeight: '600',
-    fontFamily: 'System',
-  },
-  highRiskText: {
-    color: '#EF4444',
-  },
-  mediumRiskText: {
-    color: '#F59E0B',
-  },
-  lowRiskText: {
-    color: '#10B981',
-  },
-  workersText: {
-    fontSize: 16,
-    color: '#FFF',
-    marginBottom: 8,
-    fontFamily: 'System',
-  },
-  conditionsText: {
-    fontSize: 14,
-    color: '#A1A1AA',
-    marginBottom: 16,
-    fontFamily: 'System',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    textAlign: 'center',
-    marginBottom: 8,
-    fontFamily: 'System',
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#A1A1AA',
-    marginBottom: 16,
-    fontFamily: 'System',
-  },
-  yourZoneBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#F97316',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    marginBottom: 20,
-  },
-  yourZoneText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-    fontFamily: 'System',
-  },
-  simulateRainButton: {
-    marginBottom: 20,
-  },
+  simBtnTxt: { color: '#FFF', fontSize: 15, fontWeight: '700' },
 });

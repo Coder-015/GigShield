@@ -1,6 +1,7 @@
 import { ApiResponse, LoginCredentials, User } from '@/types';
 import Storage from '@/utils/storage';
-import { SupabaseService } from './supabaseService';
+import { supabase } from '@/lib/supabase';
+import * as SupabaseSvc from '@/services/supabaseService';
 
 const AUTH_TOKEN_KEY = '@gigshield_auth_token';
 const USER_DATA_KEY = '@gigshield_user_data';
@@ -75,19 +76,18 @@ class AuthService {
       }
 
       // Get user from Supabase or create mock user
-      const { data: user, error } = await SupabaseService.getUserByPhone(credentials.phone);
-      
-      if (error || !user) {
+      const user = await SupabaseSvc.getUserByPhone(credentials.phone);
+      if (!user) {
         return { success: false, error: 'User not found' };
       }
 
       // Store session
-      await this.storeAuthSession(user);
+      await this.storeAuthSession(user as any);
 
       return { 
         success: true, 
         data: { 
-          user, 
+          user: user as any, 
           token: 'mock_token_' + Date.now() 
         } 
       };
@@ -112,40 +112,31 @@ class AuthService {
       }
 
       // Create user in Supabase
-      const { data: user, error } = await SupabaseService.createUser({
+      const user = await SupabaseSvc.createUser({
         name: userData.fullName,
         phone: userData.phone,
-        email: userData.email || null,
+        email: userData.email || '',
         city: userData.city,
-        zone: userData.city,
         platform: userData.platform,
         weekly_earnings: userData.weeklyEarnings,
-        plan: 'Basic',
-        upi_id: `${userData.phone}@ybl`,
-        member_since: new Date().toISOString().split('T')[0],
-        initials: userData.fullName.split(' ').map((n: string) => n[0]).join('').toUpperCase(),
-        streak: 0,
       });
 
-      if (error || !user) {
-        return { success: false, error: error?.message || 'Signup failed' };
+      if (!user) {
+        return { success: false, error: 'Signup failed' };
       }
 
-      // Create subscription plan
-      await SupabaseService.createSubscriptionPlan({
-        user_id: user.id,
-        plan_name: 'Basic',
-        weekly_premium: 49,
-        features: ['Rain protection', 'Instant payouts', '24/7 support'],
+      // Create default subscription
+      await supabase.from('subscriptions').insert({
+        user_id: user.id, plan: 'standard', weekly_premium: 49.00, status: 'active',
       });
 
       // Store session
-      await this.storeAuthSession(user);
+      await this.storeAuthSession(user as any);
 
       return { 
         success: true, 
         data: { 
-          user, 
+          user: user as any, 
           token: 'mock_token_' + Date.now() 
         } 
       };
@@ -157,7 +148,7 @@ class AuthService {
   // Logout user
   async logout(): Promise<ApiResponse<null>> {
     try {
-      await SupabaseService.signOut();
+      await supabase.auth.signOut();
       await this.clearAuthSession();
       return { success: true, data: null };
     } catch (error) {
@@ -186,8 +177,8 @@ class AuthService {
         return { success: false, error: 'Not authenticated' };
       }
 
-      const { data: user, error } = await SupabaseService.updateUser(currentUser.id, userData);
-      
+      const { data: user, error } = await supabase
+        .from('users').update(userData).eq('id', currentUser.id).select().single();
       if (error || !user) {
         return { success: false, error: 'Update failed' };
       }
@@ -245,8 +236,8 @@ class AuthService {
       
       if (user && token) {
         // Optionally verify token with Supabase
-        const supabaseUser = await SupabaseService.getCurrentUser();
-        if (supabaseUser) {
+        const { data: { user: sbUser } } = await supabase.auth.getUser();
+        if (sbUser) {
           return { user, isAuthenticated: true };
         }
       }

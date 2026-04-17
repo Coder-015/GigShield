@@ -5,6 +5,7 @@ import { Claim, Plan, Stats, User, WeatherAlert } from '@/types';
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import { useUserStore } from '@/store/userStore';
 
 const zustandStorage = {
   getItem: async (key: string): Promise<string | null> => {
@@ -264,7 +265,8 @@ const useAppStore = create<AppStore>()(
         try {
           set({ isClaimProcessing: true, error: null });
           
-          const user = get().user;
+          // Pull user from the real auth store
+          const user = useUserStore.getState().user || get().user;
           if (!user) {
             set({ error: 'User not authenticated' });
             return { success: false, error: 'User not authenticated' };
@@ -298,12 +300,12 @@ const useAppStore = create<AppStore>()(
       
       loadUserClaims: async () => {
         try {
-          const user = get().user;
-          if (!user) return;
+          // Pull user ID from the real auth store (useUserStore)
+          const userId = useUserStore.getState().user?.id || get().user?.id;
+          if (!userId) return;
           
-          const claims = await SupabaseService.getUserClaims(user.id);
-          
-          set({ claims: claims as any || [] });
+          const claims = await SupabaseService.getUserClaims(userId);
+          set({ claims: (claims as any) || [] });
         } catch (error) {
           console.error('Error loading user claims:', error);
         }
@@ -311,10 +313,10 @@ const useAppStore = create<AppStore>()(
 
       loadUserStats: async () => {
         try {
-          const user = get().user;
-          if (!user) return;
+          const userId = useUserStore.getState().user?.id || get().user?.id;
+          if (!userId) return;
           
-          const statsData = await SupabaseService.getUserStats(user.id);
+          const statsData = await SupabaseService.getUserStats(userId);
           if (statsData) {
             set((state) => ({
               stats: {
@@ -322,7 +324,6 @@ const useAppStore = create<AppStore>()(
                 completedClaims: parseInt(statsData.completed_claims) || 0,
                 activeClaims: parseInt(statsData.processing_claims) || 0,
                 netBenefit: parseInt(statsData.total_payout) || 0,
-                // store raw total claims just in case although UI might use completedClaims
                 totalClaims: parseInt(statsData.total_claims) || 0,
               } as any
             }));

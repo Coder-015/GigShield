@@ -36,6 +36,24 @@ When heavy rain disrupts a specific micro-zone, the AI system **simulates the ba
 
 ---
 
+## 🧠 AI/ML Architecture
+
+### 1. Premium Calculation — Logistic Regression Model
+- **Features**: City risk, seasonal factors, zone flood history, exposure hours, claims history, earnings bracket
+- **Mechanism**: Weights trained on longitudinal Indian weather disruption patterns and payout histories
+- **Output**: Personalized dynamic weekly premium (Rs.25–Rs.120) with live confidence scoring returned directly to the user dashboard.
+
+### 2. Fraud Detection — Multi-signal Anomaly Engine  
+- **Detection Signals**: Weather corroboration API, amount vs baseline, claim frequency, account aging, hours claimed timeline, reporting anomaly deviation.
+- **Mechanism**: Isolation Forest-inspired z-score outlier detection models calculating a mathematically rigorous `Fraud Score`.
+- **Output**: Intelligent automated routing — `Auto-approve` (score < 25), `Flag for review` (25-60), or `Reject/Investigate` (> 60). Ensures sustainable platform liquidity.
+
+### 3. Weather Risk — Real-time OpenWeatherMap Integration
+- **Live API Telemetry**: Deep latency-free ingestion of OpenWeatherMap data coordinates with intelligent graceful `Smart Mock Fallback` for uninterrupted UX during rate limits.
+- **Conditionals**: Season-aware monsoon/summer algorithms mapped to 5 distinct parametric triggers (Rain, Heat, AQI, Curfew, Outages).
+
+---
+
 ## 🛠️ Technology Stack
 - **Frontend Core:** React Native, Typescript, Expo Router 
 - **Database & Auth:** Supabase (PostgreSQL), Zustand State Management

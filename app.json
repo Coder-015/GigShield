@@ -19,7 +19,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.GigShield"
+      "package": "com.gigshield.app"
     },
     "web": {
       "output": "static",

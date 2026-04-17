@@ -1,392 +1,262 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, TouchableOpacity, ScrollView } from 'react-native';
+import {
+  View, Text, StyleSheet, Animated, TouchableOpacity, ScrollView, Dimensions
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { CheckCircle, X } from 'lucide-react-native';
-
+import { CheckCircle, X, ShieldCheck, AlertTriangle } from 'lucide-react-native';
+import { analyzeClaim } from '@/services/fraudDetectionEngine';
+import { useUserStore } from '@/store/userStore';
 import useAppStore from '@/store/useAppStore';
+import Svg, { Path, Circle } from 'react-native-svg';
+import * as Haptics from 'expo-haptics';
+
+const AnimatedPath = Animated.createAnimatedComponent(Path);
+const { height: H } = Dimensions.get('window');
 
 export default function ClaimTracking() {
   const params = useLocalSearchParams();
   const id = params.id as string;
   const claims = useAppStore(state => state.claims);
-  
-  const targetClaim: any = claims.find(c => c.id === id) || {
-    id: id || 'GS-20240320-004',
-    type: 'Rain Disruption',
-    date: new Date().toISOString(),
-    zone: 'Dharavi',
+  const { user } = useUserStore();
+
+  const storedClaim = claims.find(c => c.id === id);
+  const targetClaim: any = storedClaim ?? {
+    id: id || 'GS-SIM',
+    disruption_type: 'Rain Disruption',
+    triggered_at: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    zone: (params.zone as string) || 'Dharavi',
     amount: parseInt(params.amount as string) || 292,
     status: 'completed',
-    description: 'Heavy rain detected',
-    createdAt: new Date().toISOString()
+    description: `Heavy rain in ${(params.zone as string) || 'Dharavi'}`,
   };
 
-  const amount = targetClaim.amount;
-  const [completedSteps, setCompletedSteps] = useState(0);
-  const [fadeAnim] = useState(new Animated.Value(0));
+  const amount = targetClaim.amount || parseInt(params.amount as string) || 292;
+  const zone = targetClaim.zone || (params.zone as string) || 'Dharavi';
+  const claimDate = new Date(targetClaim.triggered_at || targetClaim.createdAt || new Date());
 
-  const createdAt = new Date(targetClaim.createdAt);
-  const time0 = createdAt.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-  createdAt.setMinutes(createdAt.getMinutes() + 1);
-  const time1 = createdAt.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-  createdAt.setMinutes(createdAt.getMinutes() + 1);
-  const time2 = createdAt.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-  createdAt.setMinutes(createdAt.getMinutes() + 2);
-  const time3 = createdAt.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+  const isNewClaim = (Date.now() - claimDate.getTime()) / 1000 < 90;
+
+  const [fraudResult, setFraudResult] = useState<any>(null);
+
+  useEffect(() => {
+    const accountAgeMs = user?.created_at ? Date.now() - new Date(user.created_at).getTime() : 120 * 24 * 60 * 60 * 1000;
+    const accountAgeDays = Math.round(accountAgeMs / (1000 * 60 * 60 * 24));
+    const rainfallMM = parseInt((params.rainfall as string) || '52') || 52;
+    const claimedHours = rainfallMM > 60 ? 6 : rainfallMM > 30 ? 4 : 2.5;
+
+    const result = analyzeClaim({
+      userId: user?.id || 'user', zone, city: user?.city || 'Mumbai', claimedHours, claimedAmount: amount,
+      userWeeklyBaseline: user?.weekly_earnings ? parseInt(String(user.weekly_earnings)) : 4000,
+      userPastClaims: claims.filter(c => c.status === 'completed').length,
+      weatherRainfall: rainfallMM, weatherConfirmed: rainfallMM > 0, submissionTime: claimDate,
+      userAccountAgeDays: Math.max(accountAgeDays, 1),
+    });
+    setFraudResult(result);
+  }, []);
+
+  const [completedSteps, setCompletedSteps] = useState(0);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Draw Path Animation
+  const drawAnim = useRef(new Animated.Value(0)).current;
+  const pathLength = 280; // approximate length of 5 steps vertical line
+
+  const t = (offsetMins: number) => {
+    const d = new Date(claimDate);
+    d.setMinutes(d.getMinutes() + offsetMins);
+    return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const isFraudLocked = fraudResult && fraudResult.isFraud;
 
   const STEPS = [
-    { id: 1, title: 'Disruption detected', time: time0, sub: `${targetClaim.description} in ${targetClaim.zone}`, delay: 0 },
-    { id: 2, title: 'Trigger validated', time: time1, sub: 'Parametric threshold exceeded', delay: targetClaim.status === 'processing' ? -1 : 1500 },
-    { id: 3, title: 'Fraud check passed', time: time2, sub: 'GPS and activity verified', delay: targetClaim.status === 'processing' ? -1 : 3000 },
-    { id: 4, title: 'Payout processing', time: time3, sub: 'Transferring to UPI...', delay: targetClaim.status === 'processing' ? -1 : 4500 },
-    { id: 5, title: 'Credited to UPI', time: '...', sub: `Transfer complete — Rs. ${amount}`, delay: targetClaim.status === 'processing' ? -1 : 6000 },
+    { id: 1, title: 'Disruption detected',  time: t(0), sub: `${targetClaim.description || 'Heavy weather'}`, delay: 0 },
+    { id: 2, title: 'Trigger validated',     time: t(1), sub: 'Parametric rainfall threshold exceeded',  delay: isNewClaim ? 1200 : 0 },
+    { id: 3, title: isFraudLocked ? 'Fraud Detected' : 'Fraud check passed',    time: t(2), sub: isFraudLocked ? 'Policy violation flagged by Risk Engine.' : 'GPS location & activity verified',         delay: isNewClaim ? 2400 : 0 },
+    ...(isFraudLocked ? [] : [
+      { id: 4, title: 'Payout processing',     time: t(4), sub: 'Transferring to UPI wallet…',              delay: isNewClaim ? 3600 : 0 },
+      { id: 5, title: `₹${amount} credited`,   time: t(6), sub: `Transfer complete to ${user?.phone || 'UPI'}`, delay: isNewClaim ? 4800 : 0 },
+    ])
   ];
 
   const stepOpacities = useRef(STEPS.map(() => new Animated.Value(0))).current;
 
+  // We recalculate path length dynamically based on if fraud is triggered (array length is 3 instead of 5)
+  const activePathLength = isFraudLocked ? 140 : pathLength;
+
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
+    Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
 
-    Animated.stagger(200, stepOpacities.map((anim: Animated.Value) => 
-      Animated.timing(anim, {
-        toValue: 1,
-        duration: 400,
-        useNativeDriver: true,
-      })
-    )).start();
-
-    if (targetClaim.status !== 'rejected') {
-      STEPS.forEach((step, index) => {
-        if (step.delay >= 0) {
-          setTimeout(() => {
-            setCompletedSteps(index + 1);
-            if (index === STEPS.length - 1 && targetClaim.status === 'completed') {
-              setTimeout(() => {
-                router.replace(`/payout-success?amount=${amount}` as any);
-              }, 1500);
-            }
-          }, step.delay);
-        } else if (targetClaim.status === 'processing') {
-          setCompletedSteps(2);
-        }
-      });
-    }
-  }, []);
-
-  const renderStep = (step: typeof STEPS[0], index: number) => {
-    const isCompleted = completedSteps > index;
-    const isActive = completedSteps === index;
-    const isPending = completedSteps < index;
-
-    return (
-      <Animated.View key={step.id} style={[styles.stepContainer, { opacity: stepOpacities[index] }]}>
-        <View style={styles.stepDotContainer}>
-          <View style={[
-            styles.stepDot,
-            isCompleted && styles.stepDotCompleted,
-            isActive && styles.stepDotActive,
-            isPending && styles.stepDotPending,
-          ]}>
-            {isCompleted && <CheckCircle size={16} color="#FFFFFF" />}
-            {isActive && (
-              <Animated.View style={styles.pulsingDot}>
-                <View style={styles.innerDot} />
-              </Animated.View>
-            )}
-            {isPending && <View style={styles.innerDot} />}
-          </View>
+    // 1. If it's a completely new simulated claim, always play the full animation!
+    if (isNewClaim) {
+      // Simulate live physical drawing line
+      Animated.timing(drawAnim, { toValue: activePathLength, duration: isFraudLocked ? 2400 : 5000, useNativeDriver: true }).start();
+      
+      STEPS.forEach((step, i) => {
+        setTimeout(() => {
+          setCompletedSteps(i + 1);
+          if (isFraudLocked && i === 2) {
+             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          } else {
+             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          }
+          Animated.timing(stepOpacities[i], { toValue: 1, duration: 400, useNativeDriver: true }).start();
           
-          {index < STEPS.length - 1 && (
-            <View style={[
-              styles.connectingLine,
-              isCompleted && styles.connectingLineCompleted,
-              isActive && styles.connectingLineActive,
-              isPending && styles.connectingLinePending,
-            ]} />
-          )}
-        </View>
+          if (i === STEPS.length - 1 && !isFraudLocked) {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
+        }, step.delay);
+      });
+      return;
+    }
+    
+    // 2. If it's an old claim, just snap it to the exact state it's logged as
+    if (targetClaim.status === 'processing' && !isFraudLocked) {
+      setCompletedSteps(2);
+      Animated.timing(drawAnim, { toValue: activePathLength * 0.4, duration: 1000, useNativeDriver: true }).start();
+      stepOpacities.slice(0, 2).forEach(a => a.setValue(1));
+      return;
+    }
+    if (targetClaim.status === 'rejected' || isFraudLocked) {
+      setCompletedSteps(3);
+      Animated.timing(drawAnim, { toValue: activePathLength, duration: 500, useNativeDriver: true }).start();
+      stepOpacities.slice(0, 3).forEach(a => a.setValue(1));
+      return;
+    }
 
-        <View style={styles.stepContent}>
-          <View style={styles.stepHeader}>
-            <Text style={[
-              styles.stepTitle,
-              isCompleted && styles.stepTitleCompleted,
-              isActive && styles.stepTitleActive,
-              isPending && styles.stepTitlePending,
-            ]}>
-              {step.title}
-            </Text>
-            <Text style={[
-              styles.stepTime,
-              isCompleted && styles.stepTimeCompleted,
-              isActive && styles.stepTimeActive,
-              isPending && styles.stepTimePending,
-            ]}>
-              {step.time}
-            </Text>
-          </View>
-          <Text style={[
-            styles.stepSubtitle,
-            isCompleted && styles.stepSubtitleCompleted,
-            isActive && styles.stepSubtitleActive,
-            isPending && styles.stepSubtitlePending,
-          ]}>
-            {step.sub}
-          </Text>
-        </View>
-      </Animated.View>
-    );
-  };
+    setCompletedSteps(5);
+    Animated.timing(drawAnim, { toValue: activePathLength, duration: 500, useNativeDriver: true }).start();
+    stepOpacities.forEach(a => a.setValue(1));
+  }, [isFraudLocked]);
+
+  const strokeDashoffset = drawAnim.interpolate({
+    inputRange: [0, pathLength],
+    outputRange: [pathLength, 0],
+    extrapolate: 'clamp',
+  });
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header Exit */}
-      <TouchableOpacity onPress={() => router.replace('/(tabs)' as any)} style={styles.exitButton}>
-        <X color="#A1A1AA" size={24} />
-      </TouchableOpacity>
-
-      <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Claim Tracking</Text>
-          <Text style={styles.headerSubtitle}>{targetClaim.id}</Text>
-        </View>
-
-        {/* Progress Steps */}
-        <View style={styles.stepsCard}>
-          {STEPS.map((step, index) => renderStep(step, index))}
-        </View>
-
-        {/* Payout Breakdown */}
-        <View style={styles.breakdownCard}>
-          <Text style={styles.breakdownTitle}>Payout Breakdown</Text>
-          <View style={styles.breakdownRow}>
-            <Text style={styles.breakdownText}>Trigger type</Text>
-            <Text style={styles.breakdownEquals}>Rain / {targetClaim.zone}</Text>
-          </View>
-          <View style={styles.breakdownRow}>
-            <Text style={styles.breakdownText}>Calculated Disruption</Text>
-            <Text style={styles.breakdownEquals}>~ 4 hrs</Text>
-          </View>
-          <View style={styles.breakdownResult}>
-            <Text style={styles.breakdownResultText}>Rs. {amount}</Text>
-          </View>
-        </View>
-
-        {/* Track Button */}
-        {completedSteps === STEPS.length && (
-          <TouchableOpacity
-            onPress={() => router.push(`/payout-success?amount=${amount}`)}
-            style={styles.trackButton}
-          >
-            <Text style={styles.trackButtonText}>View Payout Details</Text>
+    <SafeAreaView style={s.container}>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <View style={s.header}>
+          <TouchableOpacity onPress={() => router.back()} style={s.closeBtn}>
+            <X color="#A1A1AA" size={24} />
           </TouchableOpacity>
-        )}
-      </Animated.View>
+        </View>
+
+        <Animated.View style={[s.content, { opacity: fadeAnim }]}>
+          <Text style={s.title}>Claim #{targetClaim.claim_number || targetClaim.id?.slice(0, 8) || 'SIM'}</Text>
+          <View style={s.amountCont}>
+            <Text style={s.amountLbl}>CLAIM AMOUNT</Text>
+            <Text style={s.amountVal}>₹{amount}</Text>
+          </View>
+
+          {/* Graphical Progress Step Tracker */}
+          <View style={s.timelineWrapper}>
+            {/* The SVG physical stroke path */}
+            <View style={s.svgLayer}>
+              <Svg width="40" height="320" viewBox="0 0 40 320">
+                {/* Background Track */}
+                <Path d="M 20 20 L 20 300" stroke="rgba(255,255,255,0.05)" strokeWidth="4" strokeLinecap="round" />
+                {/* Animated Draw Track */}
+                <AnimatedPath 
+                  d="M 20 20 L 20 300" 
+                  stroke="#10B981" 
+                  strokeWidth="4" 
+                  strokeLinecap="round" 
+                  strokeDasharray={pathLength}
+                  strokeDashoffset={strokeDashoffset}
+                />
+              </Svg>
+            </View>
+
+            <View style={s.stepsContainer}>
+              {STEPS.map((step, i) => {
+                const isStepDrawn = completedSteps > i;
+                return (
+                  <View key={step.id} style={s.stepRow}>
+                    <View style={s.indicator}>
+                       <View style={[s.dot, isStepDrawn && s.dotActive, isFraudLocked && i === 2 && isStepDrawn && { backgroundColor: '#EF4444', borderColor: '#EF4444', shadowColor: '#EF4444' }]} />
+                    </View>
+                    <Animated.View style={[s.stepText, { opacity: Math.max(isStepDrawn ? 1 : 0.3, stepOpacities[i] as any) }]}>
+                      <View style={s.stepHead}>
+                        <Text style={[s.stepTitle, isStepDrawn && { color: isFraudLocked && i === 2 ? '#EF4444' : '#10B981' }]}>{step.title}</Text>
+                        <Text style={s.stepTime}>{step.time}</Text>
+                      </View>
+                      <Text style={s.stepSub}>{step.sub}</Text>
+                    </Animated.View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+
+          {completedSteps === STEPS.length && !isFraudLocked && (
+            <Animated.View style={{ alignItems: 'center', marginTop: 40, opacity: fadeAnim }}>
+              <TouchableOpacity style={s.payoutBtn} onPress={() => router.push('/payout-success' as any)}>
+                <CheckCircle size={20} color="#FFF" />
+                <Text style={s.btnTxt}>View Payout Confirmation</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          )}
+
+          {completedSteps === STEPS.length && isFraudLocked && (
+            <Animated.View style={{ alignItems: 'center', marginTop: 40, opacity: fadeAnim }}>
+              <TouchableOpacity style={[s.payoutBtn, { backgroundColor: '#EF4444', shadowColor: '#EF4444' }]} onPress={() => router.back()}>
+                <X size={20} color="#FFF" />
+                <Text style={s.btnTxt}>Claim Rejected</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          )}
+
+          {/* Engine Debug Info */}
+          {fraudResult && (
+            <View style={s.debugBox}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                 <ShieldCheck size={16} color="#71717A" />
+                 <Text style={s.debugTitle}> ML FRAUD ENGINE ANALYSIS</Text>
+              </View>
+              <Text style={s.debugTxt}>Trust Score: <Text style={{ color: fraudResult.isFraud ? '#EF4444' : '#10B981' }}>{fraudResult.trustScore}/100</Text></Text>
+              {fraudResult.flags.map((f: string, i: number) => (
+                <Text key={i} style={[s.debugTxt, { color: '#F59E0B' }]}>• {f}</Text>
+              ))}
+            </View>
+          )}
+        </Animated.View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#09090B', // Slightly darker root to frame the step card
-  },
-  exitButton: {
-    position: 'absolute',
-    top: 50,
-    right: 20,
-    zIndex: 50,
-    padding: 8,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 20,
-  },
-  content: {
-    flex: 1,
-    padding: 24,
-    marginBottom: 24, // spacing above breakdown
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  headerTitle: {
-    color: '#FFF',
-    fontSize: 28,
-    fontWeight: '800',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    color: '#A1A1AA',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  stepsCard: {
-    padding: 24,
-    marginBottom: 24,
-    backgroundColor: '#1C1C1E',
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#333336',
-  },
-  stepContainer: {
-    flexDirection: 'row',
-    marginBottom: 24,
-    alignItems: 'flex-start',
-  },
-  stepDotContainer: {
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  stepDot: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  stepDotCompleted: {
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-    borderColor: '#10B981',
-  },
-  stepDotActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-    borderColor: '#3B82F6',
-  },
-  stepDotPending: {
-    backgroundColor: '#333336',
-  },
-  innerDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#9CA3AF',
-  },
-  pulsingDot: {
-    // Pulsing logic
-  },
-  connectingLine: {
-    width: 2,
-    flex: 1,
-    marginTop: 8,
-  },
-  connectingLineCompleted: {
-    backgroundColor: '#10B981',
-  },
-  connectingLineActive: {
-    backgroundColor: '#3B82F6',
-  },
-  connectingLinePending: {
-    backgroundColor: '#333336',
-  },
-  stepContent: {
-    flex: 1,
-    paddingTop: 4,
-  },
-  stepHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  stepTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    flex: 1,
-  },
-  stepTitleCompleted: {
-    color: '#10B981',
-  },
-  stepTitleActive: {
-    color: '#60A5FA',
-  },
-  stepTitlePending: {
-    color: '#6B7280',
-  },
-  stepTime: {
-    fontSize: 14,
-  },
-  stepTimeCompleted: {
-    color: '#10B981',
-  },
-  stepTimeActive: {
-    color: '#60A5FA',
-  },
-  stepTimePending: {
-    color: '#333336',
-  },
-  stepSubtitle: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  stepSubtitleCompleted: {
-    color: '#059669',
-  },
-  stepSubtitleActive: {
-    color: '#93C5FD',
-  },
-  stepSubtitlePending: {
-    color: '#4B5563',
-  },
-  breakdownCard: {
-    padding: 20,
-    marginBottom: 24,
-    backgroundColor: '#1C1C1E',
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#333336',
-  },
-  breakdownTitle: {
-    textAlign: 'center',
-    marginBottom: 16,
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  breakdownRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  breakdownText: {
-    fontSize: 14,
-    color: '#A1A1AA',
-  },
-  breakdownEquals: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFF',
-  },
-  breakdownResult: {
-    alignItems: 'center',
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#333336',
-    marginTop: 8,
-  },
-  breakdownResultText: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#10B981',
-  },
-  trackButton: {
-    marginBottom: 20,
-    backgroundColor: '#10B981',
-    paddingVertical: 18,
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  trackButtonText: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: '700',
-  },
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0F0F13' },
+  header: { padding: 20 },
+  closeBtn: { alignSelf: 'flex-end', padding: 8, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 20 },
+  content: { paddingHorizontal: 24, paddingBottom: 60 },
+  title: { fontSize: 32, fontWeight: '900', color: '#FFF', marginBottom: 24 },
+  amountCont: { backgroundColor: 'rgba(28,28,30,0.6)', borderRadius: 20, padding: 24, marginBottom: 40, borderWidth: 1, borderColor: '#333336' },
+  amountLbl: { color: '#A1A1AA', fontSize: 13, fontWeight: '700', letterSpacing: 1, marginBottom: 6 },
+  amountVal: { color: '#10B981', fontSize: 36, fontWeight: '900' },
+
+  timelineWrapper: { flexDirection: 'row', position: 'relative' },
+  svgLayer: { width: 40, alignItems: 'center', paddingTop: 8 },
+  stepsContainer: { flex: 1, gap: 30, paddingTop: 6 },
+  stepRow: { flexDirection: 'row' },
+  indicator: { width: 0, alignItems: 'center', justifyContent: 'center' },
+  dot: { position: 'absolute', right: 12, width: 14, height: 14, borderRadius: 7, backgroundColor: '#333336', borderWidth: 2, borderColor: '#0F0F13' },
+  dotActive: { backgroundColor: '#10B981', borderColor: '#10B981', shadowColor: '#10B981', shadowOpacity: 0.5, shadowRadius: 10, elevation: 8 },
+  stepText: { flex: 1 },
+  stepHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  stepTitle: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+  stepTime: { color: '#71717A', fontSize: 12, fontWeight: '600' },
+  stepSub: { color: '#A1A1AA', fontSize: 14, marginTop: 4, lineHeight: 20 },
+
+  payoutBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F97316', paddingVertical: 18, paddingHorizontal: 24, borderRadius: 20, gap: 10, shadowColor: '#F97316', shadowOpacity: 0.4, shadowRadius: 15, elevation: 10 },
+  btnTxt: { color: '#FFF', fontSize: 16, fontWeight: '800' },
+
+  debugBox: { marginTop: 40, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#333', backgroundColor: '#1C1C1E' },
+  debugTitle: { color: '#71717A', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  debugTxt: { color: '#A1A1AA', fontSize: 13, marginBottom: 4, lineHeight: 20 },
 });

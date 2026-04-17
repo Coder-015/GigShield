@@ -1,3 +1,4 @@
+import * as SecureStore from 'expo-secure-store';
 
 export const MOCK_USER = {
   id: 'mock-user-001',
@@ -17,8 +18,7 @@ export const MOCK_USER = {
 
 export const saveMockUserToStorage = async (): Promise<void> => {
   try {
-    await Storage.setItem('gigshield_user', JSON.stringify(MOCK_USER));
-    console.log('Mock user saved to storage');
+    await SecureStore.setItemAsync('gigshield_user', JSON.stringify(MOCK_USER));
   } catch (error) {
     console.error('Failed to save mock user:', error);
   }
@@ -26,7 +26,7 @@ export const saveMockUserToStorage = async (): Promise<void> => {
 
 export const getStoredUser = async () => {
   try {
-    const stored = await Storage.getItem('gigshield_user');
+    const stored = await SecureStore.getItemAsync('gigshield_user');
     return stored ? JSON.parse(stored) : null;
   } catch (error) {
     console.error('Failed to get stored user:', error);
@@ -36,8 +36,7 @@ export const getStoredUser = async () => {
 
 export const clearStoredUser = async (): Promise<void> => {
   try {
-    await Storage.removeItem('gigshield_user');
-    console.log('Stored user cleared');
+    await SecureStore.deleteItemAsync('gigshield_user');
   } catch (error) {
     console.error('Failed to clear stored user:', error);
   }

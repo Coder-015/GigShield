@@ -117,9 +117,19 @@ export async function getUserClaims(userId: string): Promise<Claim[]> {
     .eq('user_id', userId)
     .order('triggered_at', { ascending: false });
 
-  if (error || !data) return getMockClaims();
-  if (data.length === 0) return getMockClaims();
-  return data as Claim[];
+  if (error) {
+    console.error('Error fetching claims:', error);
+    // Only use mock data for demo accounts
+    if (userId.startsWith('demo')) return getMockClaims();
+    return [];
+  }
+  
+  // Use mock only for demo accounts with no real data
+  if ((!data || data.length === 0) && userId.startsWith('demo')) {
+    return getMockClaims();
+  }
+  
+  return (data || []) as Claim[];
 }
 
 // Create a new claim (called when rain trigger fires)
