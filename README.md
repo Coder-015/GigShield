@@ -82,7 +82,7 @@ We have natively optimized the client to run under Expo.
 **Or easier way(RECOMMENDED)**
 follow this link
  ```
-https://expo.dev/accounts/slayerexe/projects/GigShield/builds/bffdb02e-ed8f-4176-8456-7f2a73bf5eb9
+https://expo.dev/accounts/slayerexe/projects/GigShield/builds/530d85a4-9ae6-4b49-bf89-3b333af380c0
  ```
 and click install this will download the .apk and can be used like a real app.
 
